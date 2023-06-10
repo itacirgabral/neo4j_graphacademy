@@ -58,12 +58,11 @@ export default class MovieService {
         `, { skip: int(skip), limit: int(limit), favorites })
     }
   )
+  await session.close()
 
   const movies = res.records.map(
     row => toNativeTypes(row.get('movie'))
   )
-
-  await session.close()
 
   return movies
   }

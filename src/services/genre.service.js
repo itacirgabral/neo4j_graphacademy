@@ -37,11 +37,31 @@ export default class GenreService {
    */
   // tag::all[]
   async all() {
-    // TODO: Open a new session
-    // TODO: Get a list of Genres from the database
-    // TODO: Close the session
+    const session = this.driver.session()
+    const res = await session.executeRead(tx => tx.run(`
+      MATCH (g:Genre)
+      WHERE g.name <> '(no genres listed)'
+      
+      CALL {
+        WITH g
+        MATCH (g)<-[:IN_GENRE]-(m:Movie)
+        WHERE m.imdbRating IS NOT NULL AND m.poster IS NOT NULL
+        RETURN m.poster AS poster
+        ORDER BY m.imdbRating DESC LIMIT 1
+      }
+      
+      RETURN g {
+        .*,
+        movies: count { (g)<-[:IN_GENRE]-(:Movie) },
+        poster: poster
+      }
+      ORDER BY g.name ASC
+    `))
+    await session.close()
 
-    return genres
+    // console.dir(res.records)
+
+    return res.records.map(row => row.get('g'))
   }
   // end::all[]
 

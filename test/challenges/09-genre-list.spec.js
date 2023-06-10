@@ -25,6 +25,8 @@ describe('09. Browsing Genres', () => {
 
     const output = await service.all()
 
+    console.dir(output)
+
     expect(output).toBeDefined()
     expect(output.length).toEqual(19)
     expect(output[0].name).toEqual('Action')
