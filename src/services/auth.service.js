@@ -102,21 +102,32 @@ export default class AuthService {
    * @param {string} unencryptedPassword    An attempt at the user's password in unencrypted form
    * @returns {Promise<Record<string, any> | false>}    Resolves to a false value when the user is not found or password is incorrect.
    */
-  // tag::authenticate[]
   async authenticate(email, unencryptedPassword) {
-    // TODO: Authenticate the user from the database
-    if (email === 'graphacademy@neo4j.com' && unencryptedPassword === 'letmein') {
-      const { password, ...claims } = user.properties
-
-      return {
-        ...claims,
-        token: jwt.sign(claims, JWT_SECRET)
-      }
+    const session = this.driver.session()
+      const res = await session.executeRead(
+      tx => tx.run(
+        'MATCH (u:User {email: $email}) RETURN u',
+        { email }
+      )
+    )
+    await session.close()
+  
+    if ( res.records.length === 0 ) {
+      return false
     }
-
-    return false
+    const user = res.records[0].get('u')
+    const encryptedPassword = user.properties.password
+    const correct = await compare(unencryptedPassword, encryptedPassword)
+    if ( correct === false ) {
+      return false
+    }
+    const { password, ...safeProperties } = user.properties
+  
+    return {
+      ...safeProperties,
+      token: jwt.sign(this.userToClaims(safeProperties), JWT_SECRET),
+    }
   }
-  // end::authenticate[]
 
 
   /**
