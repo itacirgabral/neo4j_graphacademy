@@ -208,15 +208,33 @@ export default class MovieService {
    * @param {string} id
    * @returns {Promise<Record<string, any>>}
    */
-  // tag::findById[]
   async findById(id, userId = undefined) {
-    // TODO: Find a movie by its ID
-    // MATCH (m:Movie {tmdbId: $id})
+    const session = this.driver.session()
+    const res = await session.executeRead(async tx => {
+      const favorites = await this.getUserFavorites(tx, userId)
+      return tx.run(`
+        MATCH (m:Movie {tmdbId: $id})
+        RETURN m {
+          .*,
+          actors: [ (a)-[r:ACTED_IN]->(m) | a { .*, role: r.role } ],
+          directors: [ (d)-[:DIRECTED]->(m) | d { .* } ],
+          genres: [ (m)-[:IN_GENRE]->(g) | g { .name }],
+          ratingCount: count{ (m)<-[:RATED]-() },
+          favorite: m.tmdbId IN $favorites
+        } AS movie
+        LIMIT 1
+      `, { id, favorites })
+    })
+    await session.close()
 
-    return goodfellas
+    if (res.records.length === 0) {
+      throw new NotFoundError(`Could not find a Movie with tmdbId ${id}`)
+    }
+
+    const [first] = res.records
+
+    return toNativeTypes(first.get('movie'))
   }
-  // end::findById[]
-
   /**
    * @public
    * This method should return a paginated list of similar movies to the Movie with the
@@ -237,17 +255,29 @@ export default class MovieService {
    * @param {string | undefined} userId
    * @returns {Promise<Record<string, any>[]>}
    */
-  // tag::getSimilarMovies[]
   async getSimilarMovies(id, limit = 6, skip = 0, userId = undefined) {
-    // TODO: Get similar movies based on genres or ratings
+    const session = this.driver.session()
+    const res = await session.executeRead(async tx => {
+      const favorites = await this.getUserFavorites(tx, userId)
+      return tx.run(`
+        MATCH (:Movie {tmdbId: $id})-[:IN_GENRE|ACTED_IN|DIRECTED]->()<-[:IN_GENRE|ACTED_IN|DIRECTED]-(m)
+        WHERE m.imdbRating IS NOT NULL
+        WITH m, count(*) AS inCommon
+        WITH m, inCommon, m.imdbRating * inCommon AS score
+        ORDER BY score DESC
+        SKIP $skip
+        LIMIT $limit
+        RETURN m {
+          .*,
+          score: score,
+          favorite: m.tmdbId IN $favorites
+        } AS movie
+      `, { id, skip: int(skip), limit: int(limit), favorites })
+    })
+    await session.close()
 
-    return popular.slice(skip, skip + limit)
-      .map(item => ({
-        ...item,
-        score: (Math.random() * 100).toFixed(2)
-      }))
+    return res.records.map(row => toNativeTypes(row.get('movie')))
   }
-  // end::getSimilarMovies[]
 
   /**
    * @private
