@@ -62,13 +62,23 @@ export default class PeopleService {
    * @param {string} id   The tmdbId for the user
    * @returns {Promise<Record<string, any>>}
    */
-  // tag::findById[]
   async findById(id) {
-    // TODO: Find a user by their ID
+    const session = this.driver.session()
+    const res = await session.executeRead(
+      tx => tx.run(`
+        MATCH (p:Person {tmdbId: $id})
+        RETURN p {
+          .*,
+          actedCount: count { (p)-[:ACTED_IN]->() },
+          directedCount: count { (p)-[:DIRECTED]->() }
+        } AS person
+      `, { id })
+    )
+    await session.close()
 
-    return pacino
+    const [row] = res.records
+    return toNativeTypes(row.get('person'))
   }
-  // end::findById[]
 
   /**
    * @public
@@ -80,12 +90,26 @@ export default class PeopleService {
    * @param {number} skip   The number of records to skip
    * @returns {Promise<Record<string, any>[]>}
    */
-  // tag::getSimilarPeople[]
   async getSimilarPeople(id, limit = 6, skip = 0) {
-    // TODO: Get a list of similar people to the person by their id
+    const session = this.driver.session()
+    const res = await session.executeRead(
+      tx => tx.run(`
+        MATCH (:Person {tmdbId: $id})-[:ACTED_IN|DIRECTED]->(m)<-[r:ACTED_IN|DIRECTED]-(p)
+        WITH p, collect(m {.tmdbId, .title, type: type(r)}) AS inCommon
+        RETURN p {
+          .*,
+          actedCount: count { (p)-[:ACTED_IN]->() },
+          directedCount: count {(p)-[:DIRECTED]->() },
+          inCommon: inCommon
+        } AS person
+        ORDER BY size(person.inCommon) DESC
+        SKIP $skip
+        LIMIT $limit
+      `, { id, limit: int(limit), skip: int(skip) })
+    )
+    await session.close()
 
-    return people.slice(skip, skip + limit)
+    return res.records.map(row => toNativeTypes(row.get('person')))
   }
-  // end::getSimilarPeople[]
 
 }
