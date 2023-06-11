@@ -36,13 +36,27 @@ export default class ReviewService {
    * @param {number} skip     The number of records to skip
    * @returns {Promise<Record<string, any>>}
    */
-  // tag::forMovie[]
   async forMovie(id, sort = 'timestamp', order = 'ASC', limit = 6, skip = 0) {
-    // TODO: Get ratings for a Movie
+    const session = this.driver.session()
+    const res = await session.executeRead(
+      tx => tx.run(`
+        MATCH (u:User)-[r:RATED]->(m:Movie {tmdbId: $id})
+        RETURN r {
+          .rating,
+          .timestamp,
+          user: u {
+            .id, .name
+          }
+        } AS review
+        ORDER BY r.\`${sort}\` ${order}
+        SKIP $skip
+        LIMIT $limit
+      `, { id, limit: int(limit), skip: int(skip) })
+    )
+    await session.close()
 
-    return ratings
+    return res.records.map(row => toNativeTypes(row.get('review')))
   }
-  // end::forMovie[]
 
   /**
    * @public
